@@ -44,8 +44,10 @@ for (const server of servers) {
 }
 
 const checkTrip = (port) => {
-    console.log("Port: ",port)
-    return (new Date() - trips[port] <= TRIP_TIME)
+    console.log("Checking availability of Port: ",port)
+    const tripDiff = new Date() - trips[port]
+    console.log("It has been ", tripDiff, "since the last Failure")
+    return tripDiff < TRIP_TIME
 }
 
 const getMinConnections = () => {
@@ -85,13 +87,13 @@ const getMinTime = () => {
 }
 
 const getRoundRobin = () => {
-    let i = 0;
-    while(i < servers.length && checkTrip((nextServer + i) % SERVER_COUNT)){
+    console.log("ROUND ROBIN")
+    let i = 1;
+    while(i <= servers.length && checkTrip(PORT + ((nextServer + i) % SERVER_COUNT) + 1)){
         i++;
     }
+    nextServer = (nextServer + i) % SERVER_COUNT
 
-    nextServer = (nextServer + i + 1) % SERVER_COUNT
-    console.log("Next Server: ", nextServer)
     return PORT + nextServer + 1
 }
 
@@ -103,8 +105,6 @@ function findBestServer() {
         case 'RANDOM':
             return PORT + Math.floor(Math.random() * (SERVER_COUNT)) + 1;
         case 'ROUND_ROBIN':
-            nextServer = (nextServer + 1) % SERVER_COUNT
-            return PORT + nextServer + 1
             return getRoundRobin()
         case 'LEAST_CONNECTIONS':
             return getMinConnections()
@@ -129,17 +129,22 @@ app.use('/', (req, res) => {
         serverConnections[nextWorkerPort]++;
         totalConnections[nextWorkerPort]++;
         lastStarts[nextWorkerPort].push(new Date().getTime())
-        proxy.web(req, res, { target: `http://${HOST}:${nextWorkerPort}` });
-    
+
+        console.log("Connecting to Server: ", nextWorkerPort)
+        proxy.web(req, res, { target: `http://${HOST}:${nextWorkerPort}` });     
+
         res.on('finish', () => {
             serverConnections[nextWorkerPort]--;
             serverTimings[nextWorkerPort].shift()
             serverTimings[nextWorkerPort].push(new Date().getTime() - lastStarts[nextWorkerPort].shift())
             foundResponses.add(nextWorkerPort)
+            if(res.statusCode !== 200){
+                console.log("error state")
+                trips[nextWorkerPort] = new Date();
+            }
+            
         });
-        res.on('error', () => {
-            trips[nextWorkerPort] = Date.now();
-        })
+        
     } else {
         res.status(500).send('Internal server error.')
     }

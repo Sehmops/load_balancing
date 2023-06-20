@@ -4,7 +4,7 @@ import queue from "async/queue.js";
 
 const app = express();
 const PORT = getPortFromArguments();
-let errorState = flase;
+let errorState = false;
 
 // Function to extract the server port from the process arguments
 function getPortFromArguments() {
@@ -26,6 +26,7 @@ q.buffer = 10;
 function addToQueue(req, res, next) {
     if(errorState) {
         res.status(500).send('Internal server error.');
+        return
     }
 
     if (q.length() >= q.buffer) {
