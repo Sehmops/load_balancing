@@ -4,6 +4,7 @@ import queue from "async/queue.js";
 
 const app = express();
 const PORT = getPortFromArguments();
+let errorState = flase;
 
 // Function to extract the server port from the process arguments
 function getPortFromArguments() {
@@ -23,6 +24,10 @@ q.buffer = 10;
 
 // Pushes request to queue, if the queue isn't full
 function addToQueue(req, res, next) {
+    if(errorState) {
+        res.status(500).send('Internal server error.');
+    }
+
     if (q.length() >= q.buffer) {
         res.status(503).send('Server is busym please try again later');
         return;
@@ -79,6 +84,16 @@ app.get('/', addToQueue, (req, res) => {
 app.get('/monitor', (_, res) => {
     res.status(200).send(`${q.length()}`);
 });
+
+app.get('/errors', (req, res) => {
+    errorState = true;
+    res.status(200).send('Switched to error state.');
+})
+
+app.get('/reset', (req, res) => {
+    errorState = false;
+    res.status(200).send('Switched to normal state.');
+})
 
 // Start the server
 app.listen(PORT, () => console.log(`App listening on port ${PORT}`));

@@ -7,8 +7,9 @@ const SERVER_COUNT = 4;
 
 const HOST = 'localhost';
 const PORT = 3000;
-const MODE = 'LEAST_CONNECTIONS'
+const MODE = 'ROUND_ROBIN'
 const NUM_REQUESTS_PEWMA = 5;
+const TRIP_TIME = 10000;
 
 //logging vars
 const totalConnections = {};
@@ -30,6 +31,7 @@ let servers = [];
 for (let i = 1; i <= SERVER_COUNT; i++) {
     servers.push(PORT + i);
 }
+const trips = {}
 
 // Initialize key-value list with server port and connection count
 for (const server of servers) {
@@ -38,11 +40,18 @@ for (const server of servers) {
     totalConnections[server] = 0;
     moving_avgs[server] = 0;
     lastStarts[server] = [];
+    trips[server] = new Date(1970, 1, 1);
+}
+
+const checkTrip = (port) => {
+    console.log("Port: ",port)
+    return (new Date() - trips[port] <= TRIP_TIME)
 }
 
 const getMinConnections = () => {
-    let bestPort = PORT + 1
-    for (const server of servers){
+    const availableServers = servers.filter(server => !checkTrip(server))
+    let bestPort = availableServers[0]
+    for (const server of availableServers){
         if (serverConnections[server] < serverConnections[bestPort]){
             bestPort = server
         }
@@ -65,13 +74,25 @@ const getMinTime = () => {
     console.log("pewma")
     console.log(pewma)
 
-    let bestPort = PORT + 1
-    for (const server of servers){
+    const availableServers = servers.filter(server => !checkTrip(server))
+    let bestPort = availableServers[0]
+    for (const server of availableServers){
         if (pewma[server] < pewma[bestPort]){
             bestPort = server
         }
     }
     return bestPort
+}
+
+const getRoundRobin = () => {
+    let i = 0;
+    while(i < servers.length && checkTrip((nextServer + i) % SERVER_COUNT)){
+        i++;
+    }
+
+    nextServer = (nextServer + i + 1) % SERVER_COUNT
+    console.log("Next Server: ", nextServer)
+    return PORT + nextServer + 1
 }
 
 // Function to return a random server port
@@ -84,6 +105,7 @@ function findBestServer() {
         case 'ROUND_ROBIN':
             nextServer = (nextServer + 1) % SERVER_COUNT
             return PORT + nextServer + 1
+            return getRoundRobin()
         case 'LEAST_CONNECTIONS':
             return getMinConnections()
         case 'LEAST_TIME':
@@ -103,17 +125,26 @@ app.use('/', (req, res) => {
     let nextWorkerPort = findBestServer();
     console.log("chosen server: " + nextWorkerPort)
 
-    serverConnections[nextWorkerPort]++;
-    totalConnections[nextWorkerPort]++;
-    lastStarts[nextWorkerPort].push(new Date().getTime())
-    proxy.web(req, res, { target: `http://${HOST}:${nextWorkerPort}` });
+    if(!checkTrip(nextWorkerPort)){
+        serverConnections[nextWorkerPort]++;
+        totalConnections[nextWorkerPort]++;
+        lastStarts[nextWorkerPort].push(new Date().getTime())
+        proxy.web(req, res, { target: `http://${HOST}:${nextWorkerPort}` });
+    
+        res.on('finish', () => {
+            serverConnections[nextWorkerPort]--;
+            serverTimings[nextWorkerPort].shift()
+            serverTimings[nextWorkerPort].push(new Date().getTime() - lastStarts[nextWorkerPort].shift())
+            foundResponses.add(nextWorkerPort)
+        });
+        res.on('error', () => {
+            trips[nextWorkerPort] = Date.now();
+        })
+    } else {
+        res.status(500).send('Internal server error.')
+    }
 
-    res.on('finish', () => {
-        serverConnections[nextWorkerPort]--;
-        serverTimings[nextWorkerPort].shift()
-        serverTimings[nextWorkerPort].push(new Date().getTime() - lastStarts[nextWorkerPort].shift())
-        foundResponses.add(nextWorkerPort)
-    });
+    
 });
 
 app.listen(PORT, () => console.log(`Proxy is listening on port ${PORT}`));
