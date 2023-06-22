@@ -46,7 +46,7 @@ for (const server of servers) {
 const checkTrip = (port) => {
     console.log("Checking availability of Port: ",port)
     const tripDiff = new Date() - trips[port]
-    console.log("It has been ", tripDiff, "since the last Failure")
+    console.log("It has been ", tripDiff, "ms since the last Failure")
     return tripDiff < TRIP_TIME
 }
 
@@ -138,7 +138,7 @@ app.use('/', (req, res) => {
             serverTimings[nextWorkerPort].shift()
             serverTimings[nextWorkerPort].push(new Date().getTime() - lastStarts[nextWorkerPort].shift())
             foundResponses.add(nextWorkerPort)
-            if(res.statusCode !== 200){
+            if(/^5\d\d$/.test(res.statusCode)){
                 console.log("error state")
                 trips[nextWorkerPort] = new Date();
             }
